@@ -1,0 +1,99 @@
+// ============================================================
+// Prisma Schema — Sistem Manajemen Barang Toko
+// Database  : MySQL 8.x
+// ORM       : Prisma v5.22.0
+// Fitur     : RBAC + Sliding Window Price History (Max 3)
+// ============================================================
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ------------------------------------------------------------
+// Enum
+// ------------------------------------------------------------
+enum Role {
+  ADMIN
+  USER
+}
+
+// ------------------------------------------------------------
+// User
+// ------------------------------------------------------------
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique @db.VarChar(50)
+  password  String   @db.VarChar(255)
+  role      Role     @default(USER)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("users")
+}
+
+// ------------------------------------------------------------
+// Category
+// ------------------------------------------------------------
+model Category {
+  id        Int      @id @default(autoincrement())
+  nama      String   @map("nama_kategori") @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  items Item[]
+
+  @@map("categories")
+}
+
+// ------------------------------------------------------------
+// Location
+// ------------------------------------------------------------
+model Location {
+  id        Int      @id @default(autoincrement())
+  nama      String   @map("nama_lokasi") @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  items Item[]
+
+  @@map("locations")
+}
+
+// ------------------------------------------------------------
+// Item
+// ------------------------------------------------------------
+model Item {
+  id           Int      @id @default(autoincrement())
+  categoryId   Int      @map("category_id")
+  locationId   Int      @map("location_id")
+  namaBarang   String   @map("nama_barang") @db.VarChar(150)
+  hargaSaatIni Decimal  @map("harga_saat_ini") @db.Decimal(12, 2)
+  deskripsi    String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  category     Category       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  location     Location       @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  priceHistory PriceHistory[]
+
+  @@index([categoryId], map: "items_category_id_idx")
+  @@index([locationId], map: "items_location_id_idx")
+  @@map("items")
+}
+
+// ------------------------------------------------------------
+// PriceHistory (Sliding Window — Max 3 baris per item)
+// ------------------------------------------------------------
+model PriceHistory {
+  id               Int      @id @default(autoincrement())
+  itemId           Int      @map("item_id")
+  harga            Decimal  @db.Decimal(12, 2)
+  tanggalPerubahan DateTime @default(now()) @map("tanggal_perubahan")
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId], map: "price_history_item_id_idx")
+  @@map("price_history")
+}
