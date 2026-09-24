@@ -1,0 +1,824 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Sistem Manajemen Harga Barang Toko API",
+    "version": "1.0.0",
+    "description": "RESTful API untuk mengelola data master barang, kategori, lokasi, dan riwayat harga bergulir (sliding window max 3) pada sistem inventaris toko.\n\n## Autentikasi\nSemua endpoint kecuali `/api/auth/register` dan `/api/auth/login` memerlukan JWT Bearer token. Dapatkan token via endpoint login, lalu kirim pada header `Authorization: Bearer <token>`.\n\n## Role-Based Access Control\n- **USER**: hanya dapat membaca (GET) data kategori, lokasi, dan barang.\n- **ADMIN**: dapat melakukan semua operasi CRUD termasuk mengubah harga barang.\n\n## Sliding Window Price History\nSetiap perubahan harga otomatis dicatat di `price_history`. Sistem hanya menyimpan maksimal **3 riwayat terbaru** per barang. Riwayat lama akan otomatis dihapus saat jumlah melebihi 3.",
+    "contact": {
+      "name": "Naufallevi",
+      "email": "naufallevi@gmail.com"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Development Server"
+    }
+  ],
+  "tags": [
+    { "name": "Health", "description": "Cek status server" },
+    { "name": "Auth", "description": "Registrasi & login pengguna" },
+    { "name": "Categories", "description": "Master data kategori barang" },
+    { "name": "Locations", "description": "Master data lokasi penempatan" },
+    { "name": "Items", "description": "Manajemen barang dan riwayat harga" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Cek status server",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Server berjalan normal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "status": { "type": "string", "example": "ok" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/api/auth/register": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Registrasi akun baru",
+        "description": "Mendaftarkan user baru dengan role default `USER`.",
+        "operationId": "registerUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RegisterRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Registrasi berhasil",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RegisterResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+
+    "/api/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Login pengguna",
+        "description": "Autentikasi user, mengembalikan JWT token (berlaku 1 hari).",
+        "operationId": "loginUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login berhasil, mengembalikan token JWT",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+
+    "/api/categories": {
+      "get": {
+        "tags": ["Categories"],
+        "summary": "Daftar semua kategori",
+        "operationId": "listCategories",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Daftar kategori",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CategoryListResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Categories"],
+        "summary": "Buat kategori baru (Admin only)",
+        "operationId": "createCategory",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CategoryRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Kategori berhasil dibuat",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CategoryResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/categories/{id}": {
+      "put": {
+        "tags": ["Categories"],
+        "summary": "Ubah nama kategori (Admin only)",
+        "operationId": "updateCategory",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/PathId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CategoryRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Kategori berhasil diubah",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CategoryResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["Categories"],
+        "summary": "Hapus kategori (Admin only)",
+        "description": "Akan gagal dengan 409 jika masih ada barang yang memakai kategori ini (Restrict).",
+        "operationId": "deleteCategory",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/PathId" }],
+        "responses": {
+          "200": {
+            "description": "Kategori berhasil dihapus",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SuccessMessage" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+
+    "/api/locations": {
+      "get": {
+        "tags": ["Locations"],
+        "summary": "Daftar semua lokasi",
+        "operationId": "listLocations",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Daftar lokasi",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LocationListResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Locations"],
+        "summary": "Buat lokasi baru (Admin only)",
+        "operationId": "createLocation",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LocationRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Lokasi berhasil dibuat",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LocationResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+
+    "/api/locations/{id}": {
+      "put": {
+        "tags": ["Locations"],
+        "summary": "Ubah nama lokasi (Admin only)",
+        "operationId": "updateLocation",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/PathId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LocationRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Lokasi berhasil diubah",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LocationResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["Locations"],
+        "summary": "Hapus lokasi (Admin only)",
+        "description": "Akan gagal dengan 409 jika masih ada barang di lokasi ini (Restrict).",
+        "operationId": "deleteLocation",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/PathId" }],
+        "responses": {
+          "200": {
+            "description": "Lokasi berhasil dihapus",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SuccessMessage" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+
+    "/api/items": {
+      "get": {
+        "tags": ["Items"],
+        "summary": "Daftar barang dengan relasi & riwayat harga",
+        "description": "Mengembalikan daftar barang. Setiap barang menyertakan objek `category`, `location`, dan array `priceHistory` (urut dari yang terbaru, maksimal 3).",
+        "operationId": "listItems",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "categoryId",
+            "in": "query",
+            "required": false,
+            "description": "Filter berdasarkan ID kategori",
+            "schema": { "type": "integer", "example": 1 }
+          },
+          {
+            "name": "locationId",
+            "in": "query",
+            "required": false,
+            "description": "Filter berdasarkan ID lokasi",
+            "schema": { "type": "integer", "example": 1 }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "description": "Pencarian parsial pada nama barang",
+            "schema": { "type": "string", "example": "Kertas" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Daftar barang",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ItemListResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Items"],
+        "summary": "Buat barang baru (Admin only)",
+        "description": "Secara otomatis membuat 1 record awal pada `price_history` sesuai `harga` yang diberikan.",
+        "operationId": "createItem",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ItemCreateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Barang berhasil dibuat",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ItemResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+
+    "/api/items/{id}": {
+      "put": {
+        "tags": ["Items"],
+        "summary": "Ubah metadata barang (Admin only)",
+        "description": "Mengubah nama, kategori, lokasi, atau deskripsi. Tidak mengubah harga.",
+        "operationId": "updateItem",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/PathId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ItemUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Barang berhasil diubah",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ItemResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["Items"],
+        "summary": "Hapus barang (Admin only)",
+        "description": "Menghapus barang beserta seluruh riwayat harganya (Cascade Delete).",
+        "operationId": "deleteItem",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/PathId" }],
+        "responses": {
+          "200": {
+            "description": "Barang berhasil dihapus",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SuccessMessage" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+
+    "/api/items/{id}/price": {
+      "patch": {
+        "tags": ["Items"],
+        "summary": "Perbarui harga barang (Admin only)",
+        "description": "Menjalankan **sliding window**: hanya 3 riwayat harga terbaru yang disimpan per barang. Perubahan dilakukan dalam satu transaksi atomik.",
+        "operationId": "updateItemPrice",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/PathId" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PriceUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Harga berhasil diperbarui beserta ringkasan 3 riwayat terbaru",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ItemResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    }
+  },
+
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Masukkan JWT token. Contoh: `Bearer eyJhbGci...`"
+      }
+    },
+
+    "parameters": {
+      "PathId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "ID numerik resource",
+        "schema": { "type": "integer", "minimum": 1, "example": 1 }
+      }
+    },
+
+    "schemas": {
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 50,
+            "example": "userPertama"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 6,
+            "maxLength": 100,
+            "format": "password",
+            "example": "userPertama123"
+          }
+        }
+      },
+
+      "LoginRequest": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": { "type": "string", "example": "userPertama" },
+          "password": { "type": "string", "format": "password", "example": "userPertama123" }
+        }
+      },
+
+      "RegisterResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "User berhasil didaftarkan" }
+        }
+      },
+
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "token": {
+            "type": "string",
+            "description": "JWT token. Sertakan di header `Authorization: Bearer <token>`.",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          },
+          "role": { "type": "string", "enum": ["ADMIN", "USER"], "example": "ADMIN" }
+        }
+      },
+
+      "CategoryRequest": {
+        "type": "object",
+        "required": ["nama"],
+        "properties": {
+          "nama": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "Nama Kategori"
+          }
+        }
+      },
+
+      "LocationRequest": {
+        "type": "object",
+        "required": ["nama"],
+        "properties": {
+          "nama": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "Nama Lokasi"
+          }
+        }
+      },
+
+      "Category": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "nama": { "type": "string", "example": "Nama Kategori" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+
+      "Location": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "nama": { "type": "string", "example": "Nama Lokasi" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+
+      "CategoryResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": { "$ref": "#/components/schemas/Category" }
+        }
+      },
+
+      "CategoryListResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Category" }
+          }
+        }
+      },
+
+      "LocationResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": { "$ref": "#/components/schemas/Location" }
+        }
+      },
+
+      "LocationListResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Location" }
+          }
+        }
+      },
+
+      "ItemCreateRequest": {
+        "type": "object",
+        "required": ["namaBarang", "categoryId", "locationId", "harga"],
+        "properties": {
+          "namaBarang": { "type": "string", "maxLength": 150, "example": "Nama Item" },
+          "categoryId": { "type": "integer", "minimum": 1, "example": 1 },
+          "locationId": { "type": "integer", "minimum": 1, "example": 1 },
+          "harga": {
+            "type": "number",
+            "minimum": 0.01,
+            "multipleOf": 0.01,
+            "example": 45000,
+            "description": "Harga awal barang, akan dicatat di riwayat harga"
+          },
+          "deskripsi": {
+            "type": "string",
+            "nullable": true,
+            "example": "Isi deskripsi"
+          }
+        }
+      },
+
+      "ItemUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "namaBarang": { "type": "string", "maxLength": 150, "example": "Nama Item Baru" },
+          "categoryId": { "type": "integer", "minimum": 1, "example": 2 },
+          "locationId": { "type": "integer", "minimum": 1, "example": 1 },
+          "deskripsi": { "type": "string", "nullable": true, "example": "80gsm" }
+        }
+      },
+
+      "PriceUpdateRequest": {
+        "type": "object",
+        "required": ["hargaBaru"],
+        "properties": {
+          "hargaBaru": {
+            "type": "number",
+            "minimum": 0.01,
+            "multipleOf": 0.01,
+            "example": 48000,
+            "description": "Harga baru barang. Riwayat lama yang melebihi batas 3 akan dihapus otomatis."
+          }
+        }
+      },
+
+      "PriceHistory": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 4 },
+          "itemId": { "type": "integer", "example": 1 },
+          "harga": { "type": "number", "example": 52000 },
+          "tanggalPerubahan": { "type": "string", "format": "date-time" }
+        }
+      },
+
+      "Item": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "categoryId": { "type": "integer", "example": 1 },
+          "locationId": { "type": "integer", "example": 1 },
+          "namaBarang": { "type": "string", "example": "Nama item" },
+          "hargaSaatIni": { "type": "number", "example": 52000 },
+          "deskripsi": { "type": "string", "nullable": true, "example": "Isi deskripsi" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "category": { "$ref": "#/components/schemas/Category" },
+          "location": { "$ref": "#/components/schemas/Location" },
+          "priceHistory": {
+            "type": "array",
+            "description": "Riwayat harga terbaru (maksimal 3, urut DESC berdasarkan tanggal).",
+            "items": { "$ref": "#/components/schemas/PriceHistory" }
+          }
+        }
+      },
+
+      "ItemResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "Harga berhasil diperbarui" },
+          "data": { "$ref": "#/components/schemas/Item" }
+        }
+      },
+
+      "ItemListResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Item" }
+          }
+        }
+      },
+
+      "SuccessMessage": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "Data berhasil dihapus" }
+        }
+      },
+
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "message": { "type": "string", "example": "Pesan error" }
+        }
+      }
+    },
+
+    "responses": {
+      "BadRequest": {
+        "description": "Validasi input gagal (400 Bad Request)",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "success": false,
+              "message": "[\n  {\n    \"code\": \"too_small\",\n    \"minimum\": 3,\n    \"type\": \"string\",\n    \"message\": \"String must contain at least 3 character(s)\",\n    \"path\": [\"username\"]\n  }\n]"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Token tidak ada / tidak valid (401 Unauthorized)",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "examples": {
+              "NoToken": {
+                "value": { "success": false, "message": "Token tidak ditemukan" }
+              },
+              "InvalidToken": {
+                "value": { "success": false, "message": "Token tidak valid atau expired" }
+              },
+              "BadCredentials": {
+                "value": { "success": false, "message": "Username atau password salah" }
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Role tidak mencukupi (403 Forbidden)",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "success": false,
+              "message": "Akses ditolak: role tidak mencukupi"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource tidak ditemukan (404 Not Found)",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "success": false, "message": "Data tidak ditemukan" }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Konflik data (409 Conflict) - duplikasi atau Restrict",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "examples": {
+              "Duplicate": {
+                "value": { "success": false, "message": "Username sudah terdaftar" }
+              },
+              "RestrictDelete": {
+                "value": {
+                  "success": false,
+                  "message": "Operasi gagal: data masih direferensikan oleh tabel lain (Restrict)."
+                }
+              }
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Kesalahan server (500)",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "success": false, "message": "Internal Server Error" }
+          }
+        }
+      }
+    }
+  }
+}
