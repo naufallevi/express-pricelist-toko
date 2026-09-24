@@ -3,7 +3,7 @@
   "info": {
     "title": "Sistem Manajemen Harga Barang Toko API",
     "version": "1.0.0",
-    "description": "RESTful API untuk mengelola data master barang, kategori, lokasi, dan riwayat harga bergulir (sliding window max 3) pada sistem inventaris toko.\n\n## Autentikasi\nSemua endpoint kecuali `/api/auth/register` dan `/api/auth/login` memerlukan JWT Bearer token. Dapatkan token via endpoint login, lalu kirim pada header `Authorization: Bearer <token>`.\n\n## Role-Based Access Control\n- **USER**: hanya dapat membaca (GET) data kategori, lokasi, dan barang.\n- **ADMIN**: dapat melakukan semua operasi CRUD termasuk mengubah harga barang.\n\n## Sliding Window Price History\nSetiap perubahan harga otomatis dicatat di `price_history`. Sistem hanya menyimpan maksimal **3 riwayat terbaru** per barang. Riwayat lama akan otomatis dihapus saat jumlah melebihi 3.",
+    "description": "RESTful API untuk mengelola data master barang, kategori, lokasi, dan riwayat harga bergulir (sliding window max 3) pada sistem inventaris toko.\n\n## Autentikasi\nSemua endpoint kecuali `/api/auth/login` memerlukan JWT Bearer token. Dapatkan token via endpoint login, lalu kirim pada header `Authorization: Bearer <token>`.\n\n## Role-Based Access Control\n- **USER**: hanya dapat membaca (GET) data kategori, lokasi, dan barang.\n- **ADMIN**: dapat melakukan semua operasi CRUD termasuk mengubah harga barang.\n\n## Sliding Window Price History\nSetiap perubahan harga otomatis dicatat di `price_history`. Sistem hanya menyimpan maksimal **3 riwayat terbaru** per barang. Riwayat lama akan otomatis dihapus saat jumlah melebihi 3.",
     "contact": {
       "name": "Naufallevi",
       "email": "naufallevi@gmail.com"
@@ -51,9 +51,10 @@
     "/api/auth/register": {
       "post": {
         "tags": ["Auth"],
-        "summary": "Registrasi akun baru",
-        "description": "Mendaftarkan user baru dengan role default `USER`.",
+        "summary": "Registrasi user baru (Admin only)",
+        "description": "Hanya ADMIN yang dapat mendaftarkan user baru dan menentukan rolenya.",
         "operationId": "registerUser",
+        "security": [{ "bearerAuth": [] }],
         "requestBody": {
           "required": true,
           "content": {
@@ -63,17 +64,11 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Registrasi berhasil",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/RegisterResponse" }
-              }
-            }
-          },
+          "201": { "description": "Registrasi berhasil" },
           "400": { "$ref": "#/components/responses/BadRequest" },
-          "409": { "$ref": "#/components/responses/Conflict" },
-          "500": { "$ref": "#/components/responses/InternalError" }
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" }
         }
       }
     },
@@ -496,18 +491,20 @@
         "type": "object",
         "required": ["username", "password"],
         "properties": {
-          "username": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 50,
-            "example": "userPertama"
-          },
+          "username": { "type": "string", "minLength": 3, "maxLength": 50, "example": "userPertama" },
           "password": {
             "type": "string",
             "minLength": 6,
             "maxLength": 100,
             "format": "password",
             "example": "userPertama123"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["ADMIN", "USER"],
+            "default": "USER",
+            "description": "Hanya admin yang boleh mengisi field ini.",
+            "example": "USER"
           }
         }
       },
